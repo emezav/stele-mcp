@@ -1,0 +1,26 @@
+# Go
+*.exe
+dist/
+
+# Todo el marco de trabajo es PRIVADO y no sale en el repositorio publico: el kit vendorizado, el
+# manifiesto, las puertas y nuestros documentos, actas y correspondencia.
+#
+# Lo que este repositorio publica es el producto: el codigo Go, README y LICENSE. Lo que no publica
+# es como se trabaja en el.
+#
+# Consecuencia, dicha porque si no falla en silencio: para cada ruta de abajo la persistencia
+# efectiva es `ninguna` -- el disco local es el unico registro, sin diff y sin nada a lo que volver.
+# Ver stele.config.md.
+#
+# Y una segunda consecuencia que no se ve: el buscador integrado del agente respeta este fichero, asi
+# que NO encuentra nada dentro de bitacora/. Para buscar ahi, grep de shell (ver bitacora/memory.md).
+
+# La documentacion de trabajo NO se versiona: vive solo en disco.
+# RESPALDO: ninguno
+# Sin respaldo declarado, esta linea deja el trabajo del proyecto sin red.
+bitacora/
+
+.stele/
+stele.config.md
+CLAUDE.md
+AGENTS.md
