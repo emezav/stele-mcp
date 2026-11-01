@@ -274,6 +274,68 @@ check_index() {
 The fallback reads the number from the first column only, and does not compare dates, list malformed
 names or gaps, or check cell counts.
 
+### `check_ascii`
+
+Lists every character outside ASCII in a file or in the files under a directory, with where it is
+and what it is. Nothing is allowed by default; the caller says what is, because a project may write
+its docs with accents and its code, comments and commit messages in ASCII. It does not read
+`.gitignore`: an ignored folder is checked, not silently skipped. `.git` is never read.
+
+| Input | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `path` | string | required | File or directory, walked recursively. Relative paths resolve against the server working directory. |
+| `allow` | string | none | Characters that are not reported, each one by itself, such as an em dash a project declares deliberate. |
+| `allow_spanish` | bool | `false` | Also allow the precomposed Spanish letters and marks: acute vowels, u with diaeresis and n with tilde in both cases, and the inverted question and exclamation marks. |
+| `include` | string list | none | Base-name globs; a file is checked only if it matches one. |
+| `exclude` | string list | none | Base-name globs; a file matching any is skipped. |
+| `limit` | int | `100` | Maximum findings returned. |
+
+Each finding has `path`, `line`, `column` (in characters, from 1), `char`, `code` (`U+2014`) and
+`name` (`EM DASH`). An accent typed as a separate combining mark (`U+0301`) looks like the
+precomposed letter and is still reported, since it is not the character that was allowed. A byte
+that is not valid UTF-8 is reported with an empty `char`, its hex value as `code` and
+`invalid UTF-8 byte` as `name`.
+
+It returns `root`, `files` (text files read), `allowed`, `ok` (true when nothing was found), `found`
+(every finding), `truncated`, the `findings` (up to `limit`), `chars` (one count per distinct
+character, most frequent first, always complete) and `binary`: files with a NUL byte, listed and not
+read. Paths are relative to `root`, with forward slashes.
+
+It fails, **reporting nothing**, when:
+
+- the path does not exist, or a glob is malformed;
+- an `include` or `exclude` glob matches no file (a filter that filters nothing reads exactly like
+  one that worked);
+- no text file is left to read: an empty folder, the filters leave nothing, or every file is binary
+  (zero findings over zero files reads like a clean corpus).
+
+**Fallback.** `perl` for the characters and their names, `grep` for invalid UTF-8; both come with
+Git for Windows:
+
+```bash
+# usage: check_ascii PATH ['ALLOWED']
+check_ascii() {
+  find "$1" -name .git -prune -o -type f -print0 |
+    ALLOWED=${2:-} xargs -0 perl -CSD -Mcharnames=:full -ne '
+      BEGIN { $ok = $ENV{ALLOWED};
+              @ARGV = grep { -B $_ ? !print "$_: binary, not read\n" : 1 } @ARGV }
+      while (/([^\x00-\x7F])/g) {
+        next if length $ok && $1 =~ /^[$ok]$/;
+        printf "%s:%d:%d: U+%04X %s\n", $ARGV, $., pos, ord $1, charnames::viacode(ord $1);
+      }
+    } continue { close ARGV if eof'
+  find "$1" -name .git -prune -o -type f -print0 |
+    xargs -0 perl -e 'print "$_\0" for grep { !-B } @ARGV' |
+    LC_ALL=C.UTF-8 xargs -0 grep -naxv '.*' /dev/null | cut -d: -f1,2 | sed 's/$/: invalid UTF-8/'
+}
+```
+
+`ALLOWED` is the inside of a Perl character class; for `allow_spanish`, pass
+`'\x{e1}\x{e9}\x{ed}\x{f3}\x{fa}\x{fc}\x{f1}\x{c1}\x{c9}\x{cd}\x{d3}\x{da}\x{dc}\x{d1}\x{bf}\x{a1}'`.
+The fallback guesses binaries with Perl's `-B`, which also calls an empty file binary; it reports an
+invalid line, not each invalid byte; and it does not count by character, apply globs, or fail on an
+empty folder.
+
 ## Install
 
 Requires Go 1.26 or later.

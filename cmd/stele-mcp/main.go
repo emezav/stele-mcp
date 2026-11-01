@@ -9,6 +9,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/emezav/stele-mcp/internal/ascii"
 	"github.com/emezav/stele-mcp/internal/clock"
 	"github.com/emezav/stele-mcp/internal/index"
 	"github.com/emezav/stele-mcp/internal/rows"
@@ -95,6 +96,26 @@ func checkIndex(_ context.Context, _ *mcp.CallToolRequest, in checkIndexInput) (
 	return nil, res, err
 }
 
+type checkASCIIInput struct {
+	Path         string   `json:"path" jsonschema:"file or directory to check, walked recursively without .git; relative paths resolve against the server working directory; .gitignore is not read, so ignored folders are checked"`
+	Allow        string   `json:"allow,omitempty" jsonschema:"characters that are not reported, each one by itself, such as an em dash a project declares deliberate"`
+	AllowSpanish bool     `json:"allow_spanish,omitempty" jsonschema:"also allow the precomposed Spanish letters and marks: acute vowels, u with diaeresis, n with tilde, both cases, and the inverted question and exclamation marks (default false)"`
+	Include      []string `json:"include,omitempty" jsonschema:"base-name globs; a file is checked only if it matches one; each glob must match some file"`
+	Exclude      []string `json:"exclude,omitempty" jsonschema:"base-name globs; a file matching any is skipped; each glob must match some file"`
+	Limit        int      `json:"limit,omitempty" jsonschema:"maximum findings returned (default 100); found and chars always count all of them"`
+}
+
+func checkASCII(_ context.Context, _ *mcp.CallToolRequest, in checkASCIIInput) (*mcp.CallToolResult, ascii.Result, error) {
+	res, err := ascii.Check(in.Path, ascii.Options{
+		Allow:        in.Allow,
+		AllowSpanish: in.AllowSpanish,
+		Include:      in.Include,
+		Exclude:      in.Exclude,
+		Limit:        in.Limit,
+	})
+	return nil, res, err
+}
+
 func main() {
 	if err := newServer().Run(context.Background(), &mcp.StdioTransport{}); err != nil {
 		log.Fatal(err)
@@ -148,5 +169,16 @@ func newServer() *mcp.Server {
 			"number or no file carries the prefix. " +
 			"Fallback without this server: the check_index shell function in the stele-mcp README.",
 	}, checkIndex)
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "check_ascii",
+		Description: "List every character outside ASCII in a file or the files under a directory, with path, line, " +
+			"column, code point (U+2014) and Unicode name (EM DASH), except the characters allowed. Nothing is allowed " +
+			"by default; allow_spanish allows the precomposed Spanish letters and marks, and an accent written as a " +
+			"separate combining mark is still reported. A byte that is not valid UTF-8 is reported with its hex value. " +
+			"Files with a NUL byte are listed as binary and not read. Returns files, found (all), the findings (up to " +
+			"limit, with truncated) and chars, one count per distinct character; ok is true when found is zero. Fails " +
+			"instead of reporting zero when a glob matches no file or no text file is left to read. " +
+			"Fallback without this server: the perl command in the stele-mcp README.",
+	}, checkASCII)
 	return server
 }

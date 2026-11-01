@@ -180,3 +180,38 @@ func TestCheckIndexOverMCP(t *testing.T) {
 		t.Fatalf("err = %v, result = %s", err, text(r))
 	}
 }
+
+func TestCheckASCIIOverMCP(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "a.md"), []byte("S\u00ed, una raya \u2014 aqu\u00ed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cs := connect(t)
+
+	r, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name:      "check_ascii",
+		Arguments: map[string]any{"path": dir, "allow_spanish": true},
+	})
+	if err != nil || r.IsError {
+		t.Fatalf("err = %v, result = %s", err, text(r))
+	}
+	out, ok := r.StructuredContent.(map[string]any)
+	if !ok {
+		t.Fatalf("structured content = %#v", r.StructuredContent)
+	}
+	findings, _ := out["findings"].([]any)
+	if out["ok"] != false || out["found"] != 1.0 || len(findings) != 1 || len(out["binary"].([]any)) != 0 {
+		t.Fatalf("structured content = %v", out)
+	}
+	if f := findings[0].(map[string]any); f["name"] != "EM DASH" || f["line"] != 1.0 || f["column"] != 14.0 {
+		t.Fatalf("finding = %v", f)
+	}
+
+	r, err = cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name:      "check_ascii",
+		Arguments: map[string]any{"path": dir, "include": []string{"*.go"}},
+	})
+	if err != nil || !r.IsError || !strings.Contains(text(r), `glob "*.go" matches no file`) {
+		t.Fatalf("err = %v, result = %s", err, text(r))
+	}
+}
