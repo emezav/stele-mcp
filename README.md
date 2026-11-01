@@ -156,6 +156,57 @@ sum_column() {
 The fallback adds in floating point, does not detect a column that appears twice, and lists every
 bad row rather than the first ten.
 
+### `sweep`
+
+Searches the Markdown under a path by **unit** (paragraph, list item, table row, code block...)
+instead of by line, through [markgrep](https://github.com/emezav/markgrep)'s `search` package. A
+phrase split by a line break is still found, and the pattern never goes through a shell, so its
+backslashes arrive as written. It does not read `.gitignore`: an ignored folder is searched, not
+silently skipped.
+
+| Input | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `path` | string | required | Markdown file or directory. Relative paths resolve against the server working directory. |
+| `patterns` | string list | required | Phrasings of the same idea; a unit matches if any hits. RE2 regular expressions. |
+| `literal` | bool | `false` | Patterns and controls are fixed strings. |
+| `case_sensitive` | bool | `false` | Match case. The default is case-insensitive. |
+| `invert` | bool | `false` | Return the units where no pattern hits. |
+| `kind` | string | all | Comma-separated unit kinds: `paragraph`, `item`, `code`, `table`, `heading`, `quote`, `frontmatter`, `html`. |
+| `links` | string | `text` | What a `[text](url)` link matches as: `text`, `url` or `both`. |
+| `include` | string list | none | Base-name globs; a file is searched only if it matches one. |
+| `exclude` | string list | none | Base-name globs; a file matching any is skipped. |
+| `control` | string list | none | Phrases known to be in the corpus. |
+| `limit` | int | `100` | Maximum matches returned. |
+
+It fails, **reporting nothing**, when:
+
+- the path does not exist, or no pattern is given;
+- a pattern, a kind or a link mode is invalid, or a glob is malformed;
+- an `include` or `exclude` glob matches no file (a filter that filters nothing reads exactly like
+  one that worked);
+- the filters together leave no file, or the path holds no Markdown (zero matches over zero files
+  reads like a clean corpus);
+- a `control` phrase matches nothing: a search that cannot find a phrase known to be there cannot
+  be trusted to say anything is absent. Build a negative control at run time, not as a literal you
+  will later write down, or the corpus will end up containing it.
+
+It returns `root`, the `files` searched after the filters, the `units` in them, `matched` (every
+match), `truncated`, the `matches` (up to `limit`, each with `path`, `line`, `kind`, `heading`,
+`parent`, `text` and the `patterns` that hit) and `grep`, one equivalent `grep` command per pattern.
+Paths are relative to `root`, with forward slashes. `text` is the unit as written; matching runs on
+its flattened text, with inline emphasis removed. Check `files` against the corpus you meant to
+search.
+
+**Fallback.** The `markgrep` CLI, with the same options:
+
+```bash
+markgrep search -F -e 'phrase' --in bitacora --exclude memory.md --control 'known phrase'
+```
+
+It prints the corpus first; on an empty corpus it exits 1, like a search with no matches, so read
+the `corpus:` line. Without `markgrep`, the `grep` commands that `sweep` returns, which are
+line-based and miss a phrase split by a line break.
+
 ## Install
 
 Requires Go 1.26 or later.

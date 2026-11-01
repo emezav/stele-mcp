@@ -12,6 +12,7 @@ import (
 	"github.com/emezav/stele-mcp/internal/clock"
 	"github.com/emezav/stele-mcp/internal/rows"
 	"github.com/emezav/stele-mcp/internal/sum"
+	"github.com/emezav/stele-mcp/internal/sweep"
 )
 
 var version = "dev"
@@ -44,6 +45,35 @@ type sumColumnInput struct {
 
 func sumColumn(_ context.Context, _ *mcp.CallToolRequest, in sumColumnInput) (*mcp.CallToolResult, sum.Result, error) {
 	res, err := sum.Column(in.Path, in.Column)
+	return nil, res, err
+}
+
+type sweepInput struct {
+	Path          string   `json:"path" jsonschema:"Markdown file or directory to search; relative paths resolve against the server working directory; .gitignore is not read, so ignored folders are searched"`
+	Patterns      []string `json:"patterns" jsonschema:"one or more phrasings; a unit matches if any of them hits; RE2 regular expressions unless literal is set"`
+	Literal       bool     `json:"literal,omitempty" jsonschema:"treat patterns and controls as fixed strings (default false)"`
+	CaseSensitive bool     `json:"case_sensitive,omitempty" jsonschema:"match case (default false: case-insensitive)"`
+	Invert        bool     `json:"invert,omitempty" jsonschema:"return the units where no pattern hits (default false)"`
+	Kind          string   `json:"kind,omitempty" jsonschema:"comma-separated unit kinds to keep: paragraph, item, code, table, heading, quote, frontmatter, html; empty or any keeps all"`
+	Links         string   `json:"links,omitempty" jsonschema:"what a [text](url) link matches as: text (default), url or both"`
+	Include       []string `json:"include,omitempty" jsonschema:"base-name globs; a file is searched only if it matches one; each glob must match some file"`
+	Exclude       []string `json:"exclude,omitempty" jsonschema:"base-name globs; a file matching any is skipped; each glob must match some file"`
+	Control       []string `json:"control,omitempty" jsonschema:"phrases known to be in the corpus; if one matches nothing the search fails instead of reporting absence"`
+	Limit         int      `json:"limit,omitempty" jsonschema:"maximum matches returned (default 100); matched always counts all of them"`
+}
+
+func sweepTool(_ context.Context, _ *mcp.CallToolRequest, in sweepInput) (*mcp.CallToolResult, sweep.Result, error) {
+	res, err := sweep.Run(in.Path, in.Patterns, sweep.Options{
+		Literal:       in.Literal,
+		CaseSensitive: in.CaseSensitive,
+		Invert:        in.Invert,
+		Kind:          in.Kind,
+		Links:         in.Links,
+		Include:       in.Include,
+		Exclude:       in.Exclude,
+		Control:       in.Control,
+		Limit:         in.Limit,
+	})
 	return nil, res, err
 }
 
@@ -80,5 +110,14 @@ func newServer() *mcp.Server {
 			"low, high and mid: check rows against the table you expect. " +
 			"Fallback without this server: the awk script in the stele-mcp README.",
 	}, sumColumn)
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "sweep",
+		Description: "Search the Markdown files under a path by unit (paragraph, list item, table, code block...), " +
+			"not by line, so a phrase split by a line break is still found; the pattern never goes through a shell. " +
+			"Does not read .gitignore. Fails instead of reporting zero when a filter matches no file, the filters " +
+			"leave no file, or a control phrase matches nothing. Returns the files searched, the unit count, " +
+			"matched (all), the matches (up to limit, with truncated) and the equivalent grep commands. " +
+			"Fallback without this server: markgrep search, or the grep commands it returns.",
+	}, sweepTool)
 	return server
 }

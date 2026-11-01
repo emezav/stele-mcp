@@ -2,7 +2,10 @@ module github.com/emezav/stele-mcp
 
 go 1.26.5
 
-require github.com/modelcontextprotocol/go-sdk v1.8.0
+require (
+	github.com/emezav/markgrep v0.12.0
+	github.com/modelcontextprotocol/go-sdk v1.8.0
+)
 
 require (
 	github.com/google/jsonschema-go v0.4.3 // indirect

@@ -113,3 +113,34 @@ func TestSumColumnOverMCP(t *testing.T) {
 		t.Fatalf("err = %v, result = %s", err, text(r))
 	}
 }
+
+func TestSweepOverMCP(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "memory.md"), []byte("# memory\n\nA backslash \\d and a phrase\nsplit by a line break.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cs := connect(t)
+
+	r, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name:      "sweep",
+		Arguments: map[string]any{"path": dir, "patterns": []string{`\\d and a phrase split`}, "control": []string{"backslash"}},
+	})
+	if err != nil || r.IsError {
+		t.Fatalf("err = %v, result = %s", err, text(r))
+	}
+	out, ok := r.StructuredContent.(map[string]any)
+	if !ok {
+		t.Fatalf("structured content = %#v", r.StructuredContent)
+	}
+	if out["matched"] != 1.0 || out["truncated"] != false || len(out["files"].([]any)) != 1 {
+		t.Fatalf("structured content = %v", out)
+	}
+
+	r, err = cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name:      "sweep",
+		Arguments: map[string]any{"path": dir, "patterns": []string{"phrase"}, "control": []string{"not in the corpus"}},
+	})
+	if err != nil || !r.IsError || !strings.Contains(text(r), "positive control matched nothing") {
+		t.Fatalf("err = %v, result = %s", err, text(r))
+	}
+}
