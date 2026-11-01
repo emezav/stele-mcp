@@ -63,6 +63,43 @@ append_row() {
 The fallback does not check line breaks or unescaped pipes inside cells, and it assumes the file
 ends with a newline.
 
+### `today`
+
+Today's date, measured from the machine clock. The date in an agent's context is often UTC, so
+in the last hours of a local evening it is already tomorrow; and `git log -1` gives the day of the
+last commit, not today.
+
+| Input | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `dir` | string | server working directory | Git repository used to probe the time zone. |
+| `commits` | int | `20` | How many recent commits to probe. |
+
+It returns `date` (`YYYY-MM-DD`), `time`, `offset` (`-0500`), `zone`, and a `verdict` with an
+`advice` sentence. The clock is only trustworthy if it runs where the project lives, so the tool
+compares the author offset of each recent commit with the offset the local zone had **at that
+commit's instant** (a daylight saving change is not a mismatch):
+
+| Verdict | Meaning | What to do |
+| --- | --- | --- |
+| `agree` | Every probed commit matches, on an offset other than `+0000`. | Use the date. |
+| `inconclusive` | They match, but on `+0000`: a UTC machine and a project that lives in UTC look the same. | Ask the user. |
+| `disagree` | Some commits were stamped in another zone; they are listed in `mismatches`. | Ask the user. |
+| `no_vcs` | No git, no repository or no commits. | Ask the user. |
+
+A remote agent or a container usually runs in UTC and stamps its own commits in UTC, so clock and
+commits fail together and agree. That is why matching on `+0000` is `inconclusive`, not `agree`.
+
+**Fallback.** The clock and the probe in shell:
+
+```bash
+date '+%Y-%m-%d %z'                                      # today, and the zone of this shell
+git log -20 --format='%ad' --date=format:'%z' | sort -u  # the zone of whoever commits
+TZ=UTC date '+%z'                                        # must differ from the commits, or the probe proves nothing
+```
+
+If the offsets differ, ask the user. The fallback compares against today's offset, so across a
+daylight saving change it reports a mismatch that the tool does not.
+
 ## Install
 
 Requires Go 1.26 or later.

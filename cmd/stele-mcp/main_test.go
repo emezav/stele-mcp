@@ -64,3 +64,21 @@ func TestAppendRowOverMCP(t *testing.T) {
 		t.Fatalf("err = %v, result = %s", err, text(r))
 	}
 }
+
+func TestTodayOverMCP(t *testing.T) {
+	cs := connect(t)
+	r, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name:      "today",
+		Arguments: map[string]any{"dir": t.TempDir()},
+	})
+	if err != nil || r.IsError {
+		t.Fatalf("err = %v, result = %s", err, text(r))
+	}
+	out, ok := r.StructuredContent.(map[string]any)
+	if !ok {
+		t.Fatalf("structured content = %#v", r.StructuredContent)
+	}
+	if out["verdict"] != "no_vcs" || len(out["date"].(string)) != len("2006-01-02") {
+		t.Fatalf("structured content = %v", out)
+	}
+}

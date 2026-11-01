@@ -9,6 +9,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/emezav/stele-mcp/internal/clock"
 	"github.com/emezav/stele-mcp/internal/rows"
 )
 
@@ -24,6 +25,15 @@ type appendRowInput struct {
 func appendRow(_ context.Context, _ *mcp.CallToolRequest, in appendRowInput) (*mcp.CallToolResult, rows.Result, error) {
 	res, err := rows.Append(in.Path, in.Cells, rows.Options{ASCIIOnly: in.ASCIIOnly, DryRun: in.DryRun})
 	return nil, res, err
+}
+
+type todayInput struct {
+	Dir     string `json:"dir,omitempty" jsonschema:"git repository used to probe the time zone; default the server working directory"`
+	Commits int    `json:"commits,omitempty" jsonschema:"how many recent commits to probe (default 20)"`
+}
+
+func today(_ context.Context, _ *mcp.CallToolRequest, in todayInput) (*mcp.CallToolResult, clock.Result, error) {
+	return nil, clock.Today(in.Dir, in.Commits), nil
 }
 
 func main() {
@@ -42,5 +52,13 @@ func newServer() *mcp.Server {
 			"unescaped pipe. Returns the written line, its line number and the header. " +
 			"Fallback without this server: the append_row shell function in the stele-mcp README.",
 	}, appendRow)
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "today",
+		Description: "Today's date from the machine clock, not from the agent context, which is often UTC. " +
+			"Probes the time zone of recent git commits, comparing each one with the local offset at " +
+			"its own instant: verdict agree means the date can be trusted; inconclusive, disagree or " +
+			"no_vcs mean ask the user for the date. " +
+			"Fallback without this server: date '+%Y-%m-%d %z' and the git log probe in the stele-mcp README.",
+	}, today)
 	return server
 }
