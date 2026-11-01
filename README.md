@@ -344,6 +344,16 @@ Requires Go 1.26 or later.
 go install github.com/emezav/stele-mcp/cmd/stele-mcp@latest
 ```
 
+`@latest` resolves to the highest release tag. Right after a release, the Go module proxy may still
+serve the previous one for a while, and `go install` reports no error. Check what you got:
+
+```bash
+go version -m "$(go env GOPATH)/bin/stele-mcp"
+```
+
+The `mod` line names the version; compare it with the latest tag at
+<https://github.com/emezav/stele-mcp/tags>. On Windows the file is `stele-mcp.exe`.
+
 ## Use with an MCP client
 
 The server speaks MCP over stdio. Start it from the root of the project that holds the stele
