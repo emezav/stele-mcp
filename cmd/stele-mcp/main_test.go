@@ -82,3 +82,34 @@ func TestTodayOverMCP(t *testing.T) {
 		t.Fatalf("structured content = %v", out)
 	}
 }
+
+func TestSumColumnOverMCP(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "effort.md")
+	if err := os.WriteFile(p, []byte("| N | hours |\n| --- | --- |\n| 1 | 3-4 |\n| 2 | 2 |\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cs := connect(t)
+
+	r, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name:      "sum_column",
+		Arguments: map[string]any{"path": p, "column": "hours"},
+	})
+	if err != nil || r.IsError {
+		t.Fatalf("err = %v, result = %s", err, text(r))
+	}
+	out, ok := r.StructuredContent.(map[string]any)
+	if !ok {
+		t.Fatalf("structured content = %#v", r.StructuredContent)
+	}
+	if out["rows"] != 2.0 || out["low"] != 5.0 || out["high"] != 6.0 || out["mid"] != 5.5 {
+		t.Fatalf("structured content = %v", out)
+	}
+
+	r, err = cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name:      "sum_column",
+		Arguments: map[string]any{"path": p, "column": "minutes"},
+	})
+	if err != nil || !r.IsError || !strings.Contains(text(r), `no column "minutes"`) {
+		t.Fatalf("err = %v, result = %s", err, text(r))
+	}
+}

@@ -11,6 +11,7 @@ import (
 
 	"github.com/emezav/stele-mcp/internal/clock"
 	"github.com/emezav/stele-mcp/internal/rows"
+	"github.com/emezav/stele-mcp/internal/sum"
 )
 
 var version = "dev"
@@ -34,6 +35,16 @@ type todayInput struct {
 
 func today(_ context.Context, _ *mcp.CallToolRequest, in todayInput) (*mcp.CallToolResult, clock.Result, error) {
 	return nil, clock.Today(in.Dir, in.Commits), nil
+}
+
+type sumColumnInput struct {
+	Path   string `json:"path" jsonschema:"file whose last content is the table; trailing blank lines are allowed; relative paths resolve against the server working directory"`
+	Column string `json:"column" jsonschema:"header name of the column to sum, case-insensitive"`
+}
+
+func sumColumn(_ context.Context, _ *mcp.CallToolRequest, in sumColumnInput) (*mcp.CallToolResult, sum.Result, error) {
+	res, err := sum.Column(in.Path, in.Column)
+	return nil, res, err
 }
 
 func main() {
@@ -60,5 +71,14 @@ func newServer() *mcp.Server {
 			"no_vcs mean ask the user for the date. " +
 			"Fallback without this server: date '+%Y-%m-%d %z' and the git log probe in the stele-mcp README.",
 	}, today)
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "sum_column",
+		Description: "Sum a numeric column of the Markdown table that ends a file, such as the hours of an " +
+			"effort log. Each cell must be a single value (2) or a low-high range (3.25-4); a decimal comma " +
+			"is accepted. Any row that is neither, or has a different cell count than the header, fails the " +
+			"whole sum and is named in the error, instead of counting as zero. Returns rows, singles, ranges, " +
+			"low, high and mid: check rows against the table you expect. " +
+			"Fallback without this server: the awk script in the stele-mcp README.",
+	}, sumColumn)
 	return server
 }

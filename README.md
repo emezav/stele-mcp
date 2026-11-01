@@ -100,6 +100,62 @@ TZ=UTC date '+%z'                                        # must differ from the 
 If the offsets differ, ask the user. The fallback compares against today's offset, so across a
 daylight saving change it reports a mismatch that the tool does not.
 
+### `sum_column`
+
+Sums a numeric column of the Markdown table that ends a file, such as the hours of an effort log.
+A cell may be a single value (`2`) or a range (`3.25-4`), and a decimal comma is accepted. A summer
+that only matches one of the two forms reads the other as zero: the total keeps a plausible shape
+and is silently low.
+
+| Input | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `path` | string | required | File whose last content is the table. Trailing blank lines are allowed. Relative paths resolve against the server working directory. |
+| `column` | string | required | Header name of the column to sum, case-insensitive. |
+
+It fails, **summing nothing**, when:
+
+- the file does not exist, or a table is not its last content;
+- the table has no header and separator line;
+- the column is not in the header (the error lists the header), or appears twice;
+- any row has a different cell count than the header, or a cell in the column that is neither a
+  number nor a low-high range, including an empty one or a backwards range. The error names the
+  first ten such rows by line number.
+
+It returns `rows`, `singles`, `ranges`, `low`, `high` and `mid` (the midpoint of the two totals),
+plus the column and the header. Values are added exactly, so `0.1 + 0.2` is `0.3`. Compare `rows`
+with the number of rows you expect: it is the denominator of the sum.
+
+**Fallback.** The same checks in `awk`:
+
+```bash
+# usage: sum_column FILE 'COLUMN'
+sum_column() {
+  awk -F'|' -v col="$2" '
+    function num(s) { gsub(/,/, ".", s); return s + 0 }
+    { gsub(/\\\|/, "") }                                  # an escaped \| is not a column
+    !/^ *\|/ { if (NF) h = 0; next }                      # text after a table: it no longer closes the file
+    !h { h = 1; k = n = lo = hi = bad = 0; w = NF          # header of a new table
+         for (i = 2; i < NF; i++) { c = $i; gsub(/^ +| +$/, "", c)
+           if (tolower(c) == tolower(col)) k = i }
+         next }
+    /^ *\|( *:?-+:? *\|)+ *$/ || !k { next }              # separator, or no such column
+    { n++; c = $k; gsub(/^ +| +$/, "", c)
+      if (NF != w) { print "line " NR ": cell count"; bad++ }
+      else if (c ~ /^[0-9]+([.,][0-9]+)?$/) { lo += num(c); hi += num(c) }
+      else if (c ~ /^[0-9]+([.,][0-9]+)? *- *[0-9]+([.,][0-9]+)?$/) {
+        split(c, r, "-"); lo += num(r[1]); hi += num(r[2]) }
+      else { print "line " NR ": \"" c "\""; bad++ } }
+    END { if (!h) { print "no table closes the file"; exit 1 }
+          if (!k) { print "no column " col; exit 1 }
+          if (bad) { print bad " of " n " rows cannot be summed"; exit 1 }
+          printf "rows %d  low %.2f  high %.2f  mid %.2f\n", n, lo, hi, (lo + hi) / 2 }
+  ' "$1"
+}
+```
+
+The fallback adds in floating point, does not detect a column that appears twice, and lists every
+bad row rather than the first ten.
+
 ## Install
 
 Requires Go 1.26 or later.

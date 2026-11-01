@@ -61,19 +61,16 @@ func Append(path string, cells []string, opts Options) (Result, error) {
 	if strings.TrimSpace(lines[last]) == "" {
 		return Result{}, fmt.Errorf("%s ends with a blank line (line %d): a row appended there would fall outside the table", path, last+1)
 	}
-	if !isTableLine(lines[last]) {
+	if !IsTableLine(lines[last]) {
 		return Result{}, fmt.Errorf("the last line of %s is not a table row (line %d): the table must be the last content of the file", path, last+1)
 	}
-	start := last
-	for start > 0 && isTableLine(lines[start-1]) {
-		start--
-	}
-	if start+1 > last || !separatorRe.MatchString(strings.TrimSpace(lines[start+1])) {
-		return Result{}, fmt.Errorf("the table ending %s has no header and separator (starts at line %d)", path, start+1)
+	start, err := TableStart(lines, last)
+	if err != nil {
+		return Result{}, fmt.Errorf("the table ending %s %w", path, err)
 	}
 	header := lines[start]
 
-	want := len(splitCells(header))
+	want := len(SplitCells(header))
 	if len(cells) != want {
 		return Result{}, fmt.Errorf("column count: header has %d, row has %d", want, len(cells))
 	}
@@ -111,12 +108,27 @@ func Append(path string, cells []string, opts Options) (Result, error) {
 	return res, nil
 }
 
-func isTableLine(s string) bool {
+// TableStart walks back from lines[last], a table row, to the first line of
+// its table and returns that index. The table must open with a header and a
+// separator line.
+func TableStart(lines []string, last int) (int, error) {
+	start := last
+	for start > 0 && IsTableLine(lines[start-1]) {
+		start--
+	}
+	if start+1 > last || !separatorRe.MatchString(strings.TrimSpace(lines[start+1])) {
+		return 0, fmt.Errorf("has no header and separator (starts at line %d)", start+1)
+	}
+	return start, nil
+}
+
+// IsTableLine reports whether s is a line of a Markdown table.
+func IsTableLine(s string) bool {
 	return strings.HasPrefix(strings.TrimSpace(s), "|")
 }
 
-// splitCells splits a table line on unescaped pipes, dropping the outer ones.
-func splitCells(line string) []string {
+// SplitCells splits a table line on unescaped pipes, dropping the outer ones.
+func SplitCells(line string) []string {
 	s := strings.TrimSpace(line)
 	s = strings.TrimPrefix(s, "|")
 	if strings.HasSuffix(s, "|") && !strings.HasSuffix(s, `\|`) {
