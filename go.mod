@@ -3,7 +3,7 @@ module github.com/emezav/stele-mcp
 go 1.26.5
 
 require (
-	github.com/emezav/markgrep v0.12.0
+	github.com/emezav/markgrep v0.13.0
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 )
 

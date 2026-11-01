@@ -47,7 +47,7 @@ func TestPhraseSplitByLineBreak(t *testing.T) {
 func TestExcludesAccumulate(t *testing.T) {
 	dir := corpus(t)
 	res, err := Run(dir, []string{"memory|latest"}, Options{Exclude: []string{"memory.md", "latest.md"}})
-	if !errors.Is(err, ErrEmptyCorpus) {
+	if !errors.Is(err, search.ErrEmptyCorpus) {
 		t.Fatalf("every file excluded: err = %v, result = %+v", err, res)
 	}
 	res, err = Run(dir, []string{"#"}, Options{Literal: true, Exclude: []string{"memory.md"}})
@@ -73,8 +73,18 @@ func TestRefusalsAreErrors(t *testing.T) {
 	if _, err := Run("", []string{"sweep"}, Options{}); err == nil || !strings.Contains(err.Error(), "path is required") {
 		t.Fatalf("no path: err = %v", err)
 	}
-	if _, err := Run(t.TempDir(), []string{"sweep"}, Options{}); !errors.Is(err, ErrEmptyCorpus) {
+	if _, err := Run(t.TempDir(), []string{"sweep"}, Options{}); !errors.Is(err, search.ErrEmptyCorpus) {
 		t.Fatalf("no Markdown under root: err = %v", err)
+	}
+	empty := t.TempDir()
+	if err := os.WriteFile(filepath.Join(empty, "empty.md"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Run(empty, []string{"sweep"}, Options{}); !errors.Is(err, search.ErrEmptyCorpus) {
+		t.Fatalf("one file, no unit: err = %v", err)
+	}
+	if _, err := Run(dir, []string{"sweep"}, Options{Kind: "table"}); !errors.Is(err, search.ErrFilterMatchesNothing) {
+		t.Fatalf("kind with no unit of its type: err = %v", err)
 	}
 }
 

@@ -182,10 +182,10 @@ It fails, **reporting nothing**, when:
 
 - the path does not exist, or no pattern is given;
 - a pattern, a kind or a link mode is invalid, or a glob is malformed;
-- an `include` or `exclude` glob matches no file (a filter that filters nothing reads exactly like
-  one that worked);
-- the filters together leave no file, or the path holds no Markdown (zero matches over zero files
-  reads like a clean corpus);
+- an `include` or `exclude` glob matches no file, or `kind` leaves no unit of its type (a filter
+  that filters nothing reads exactly like one that worked);
+- no unit is left to search: the filters together leave no file, the path holds no Markdown, or its
+  Markdown is empty (zero matches over zero units reads like a clean corpus);
 - a `control` phrase matches nothing: a search that cannot find a phrase known to be there cannot
   be trusted to say anything is absent. Build a negative control at run time, not as a literal you
   will later write down, or the corpus will end up containing it.
@@ -203,8 +203,8 @@ search.
 markgrep search -F -e 'phrase' --in bitacora --exclude memory.md --control 'known phrase'
 ```
 
-It prints the corpus first; on an empty corpus it exits 1, like a search with no matches, so read
-the `corpus:` line. Without `markgrep`, the `grep` commands that `sweep` returns, which are
+It prints the corpus first, and since markgrep 0.13.0 an empty corpus or a dead filter exits 2, not
+1 like a search with no matches; with an older markgrep, read the `corpus:` line. Without `markgrep`, the `grep` commands that `sweep` returns, which are
 line-based and miss a phrase split by a line break.
 
 ### `check_index`

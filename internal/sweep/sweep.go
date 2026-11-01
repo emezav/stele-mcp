@@ -9,7 +9,6 @@ package sweep
 
 import (
 	"errors"
-	"fmt"
 	"path/filepath"
 
 	"github.com/emezav/markgrep/search"
@@ -17,9 +16,6 @@ import (
 
 // DefaultLimit is how many matches come back when Options.Limit is not set.
 const DefaultLimit = 100
-
-// ErrEmptyCorpus is returned when no Markdown file is left to search.
-var ErrEmptyCorpus = errors.New("empty corpus")
 
 // Options mirrors search.Options, plus Limit.
 type Options struct {
@@ -60,9 +56,9 @@ type Result struct {
 
 // Run searches the Markdown files under root (a file or a directory) for
 // patterns. Every refusal from search.Run is returned as an error, never as an
-// empty Result: a dead filter (search.ErrFilterMatchesNothing) and a failed
-// control (search.ErrControlFailed) included. An empty corpus is refused too
-// (ErrEmptyCorpus).
+// empty Result: a dead filter or a kind with no unit of its type
+// (search.ErrFilterMatchesNothing), a failed control (search.ErrControlFailed)
+// and a corpus with no unit left to search (search.ErrEmptyCorpus) included.
 func Run(root string, patterns []string, o Options) (Result, error) {
 	if root == "" {
 		return Result{}, errors.New("path is required: the file or directory to search")
@@ -79,12 +75,6 @@ func Run(root string, patterns []string, o Options) (Result, error) {
 	})
 	if err != nil {
 		return Result{}, err
-	}
-	// search.Run accepts an empty corpus when each filter matched something
-	// but together they left nothing, or when root holds no Markdown at all.
-	// Zero matches over zero files reads exactly like a clean corpus.
-	if len(r.Files) == 0 {
-		return Result{}, fmt.Errorf("no Markdown file left to search under %s after the filters: %w", root, ErrEmptyCorpus)
 	}
 
 	limit := o.Limit

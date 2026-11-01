@@ -132,8 +132,9 @@ func newServer() *mcp.Server {
 		Name: "sweep",
 		Description: "Search the Markdown files under a path by unit (paragraph, list item, table, code block...), " +
 			"not by line, so a phrase split by a line break is still found; the pattern never goes through a shell. " +
-			"Does not read .gitignore. Fails instead of reporting zero when a filter matches no file, the filters " +
-			"leave no file, or a control phrase matches nothing. Returns the files searched, the unit count, " +
+			"Does not read .gitignore. Fails instead of reporting zero when a filter matches no file, kind leaves " +
+			"no unit of its type, no unit is left to search (no file, or only empty ones), or a control phrase " +
+			"matches nothing. Returns the files searched, the unit count, " +
 			"matched (all), the matches (up to limit, with truncated) and the equivalent grep commands. " +
 			"Fallback without this server: markgrep search, or the grep commands it returns.",
 	}, sweepTool)
