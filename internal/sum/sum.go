@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"os"
 	"regexp"
 	"strings"
 
@@ -45,32 +44,13 @@ const maxListed = 10
 // range in that column, or nothing is summed: a row read as zero is the
 // failure this exists to prevent.
 func Column(path, column string) (Result, error) {
-	data, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return Result{}, fmt.Errorf("file does not exist: %s", path)
-	}
+	lines, start, last, err := rows.ReadClosingTable(path)
 	if err != nil {
 		return Result{}, err
 	}
-	lines := strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n")
-
-	last := len(lines) - 1
-	for last >= 0 && strings.TrimSpace(lines[last]) == "" {
-		last--
-	}
-	if last < 0 {
-		return Result{}, fmt.Errorf("%s is empty: no table to sum", path)
-	}
-	if !rows.IsTableLine(lines[last]) {
-		return Result{}, fmt.Errorf("the last content of %s is not a table row (line %d): the table must close the file", path, last+1)
-	}
-	start, err := rows.TableStart(lines, last)
-	if err != nil {
-		return Result{}, fmt.Errorf("the table ending %s %w", path, err)
-	}
 
 	header := rows.SplitCells(lines[start])
-	col, err := find(header, column)
+	col, err := rows.FindColumn(header, column)
 	if err != nil {
 		return Result{}, err
 	}
@@ -118,26 +98,6 @@ func Column(path, column string) (Result, error) {
 	res.High, _ = high.Float64()
 	res.Mid, _ = mid.Float64()
 	return res, nil
-}
-
-// find returns the index of the header cell named name.
-func find(header []string, name string) (int, error) {
-	want := strings.TrimSpace(name)
-	found := -1
-	names := make([]string, len(header))
-	for i, h := range header {
-		names[i] = strings.TrimSpace(h)
-		if strings.EqualFold(names[i], want) {
-			if found >= 0 {
-				return 0, fmt.Errorf("column %q appears twice in the header", want)
-			}
-			found = i
-		}
-	}
-	if found < 0 {
-		return 0, fmt.Errorf("no column %q; the header has: %s", want, strings.Join(names, ", "))
-	}
-	return found, nil
 }
 
 // parse reads a cell as a single value or a low-high range. A decimal comma

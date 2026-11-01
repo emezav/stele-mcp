@@ -10,6 +10,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/emezav/stele-mcp/internal/clock"
+	"github.com/emezav/stele-mcp/internal/index"
 	"github.com/emezav/stele-mcp/internal/rows"
 	"github.com/emezav/stele-mcp/internal/sum"
 	"github.com/emezav/stele-mcp/internal/sweep"
@@ -77,6 +78,23 @@ func sweepTool(_ context.Context, _ *mcp.CallToolRequest, in sweepInput) (*mcp.C
 	return nil, res, err
 }
 
+type checkIndexInput struct {
+	Path         string `json:"path" jsonschema:"index file whose last content is the table, such as history/index.md or cartas.md; relative paths resolve against the server working directory"`
+	Prefix       string `json:"prefix" jsonschema:"file name prefix of the listed files, such as sesion or carta; files are <prefix>-<number>-<YYYY-MM-DD>.md"`
+	Dir          string `json:"dir,omitempty" jsonschema:"folder holding the files; default the folder of the index"`
+	NumberColumn string `json:"number_column,omitempty" jsonschema:"header name of the number column, case-insensitive; default the first column"`
+	DateColumn   string `json:"date_column,omitempty" jsonschema:"header name of a date column to compare with the date in each file name, such as Fecha; default no date check"`
+}
+
+func checkIndex(_ context.Context, _ *mcp.CallToolRequest, in checkIndexInput) (*mcp.CallToolResult, index.Result, error) {
+	res, err := index.Check(in.Path, in.Prefix, index.Options{
+		Dir:          in.Dir,
+		NumberColumn: in.NumberColumn,
+		DateColumn:   in.DateColumn,
+	})
+	return nil, res, err
+}
+
 func main() {
 	if err := newServer().Run(context.Background(), &mcp.StdioTransport{}); err != nil {
 		log.Fatal(err)
@@ -119,5 +137,15 @@ func newServer() *mcp.Server {
 			"matched (all), the matches (up to limit, with truncated) and the equivalent grep commands. " +
 			"Fallback without this server: markgrep search, or the grep commands it returns.",
 	}, sweepTool)
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "check_index",
+		Description: "Cross-check the Markdown table that ends an append-only index (session index, letter index) " +
+			"against the files <prefix>-<number>-<YYYY-MM-DD>.md in its folder. Reports rows without a file, files " +
+			"without a row, repeated numbers in either, prefix-* names without that shape, numbers missing from both " +
+			"(gaps), and, with date_column, rows whose date differs from their file name; ok is true when all are empty. " +
+			"It does not judge: a row without a file can be a documented absence. Fails if a number cell is not a " +
+			"number or no file carries the prefix. " +
+			"Fallback without this server: the check_index shell function in the stele-mcp README.",
+	}, checkIndex)
 	return server
 }

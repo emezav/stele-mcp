@@ -144,3 +144,39 @@ func TestSweepOverMCP(t *testing.T) {
 		t.Fatalf("err = %v, result = %s", err, text(r))
 	}
 }
+
+func TestCheckIndexOverMCP(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "cartas.md")
+	if err := os.WriteFile(p, []byte("| # | Fecha |\n| --- | --- |\n| 001 | 2026-11-01 |\n| 002 | 2026-11-01 |\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "carta-001-2026-11-01.md"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cs := connect(t)
+
+	r, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name:      "check_index",
+		Arguments: map[string]any{"path": p, "prefix": "carta", "date_column": "fecha"},
+	})
+	if err != nil || r.IsError {
+		t.Fatalf("err = %v, result = %s", err, text(r))
+	}
+	out, ok := r.StructuredContent.(map[string]any)
+	if !ok {
+		t.Fatalf("structured content = %#v", r.StructuredContent)
+	}
+	missing, _ := out["missing_files"].([]any)
+	if out["ok"] != false || out["rows"] != 2.0 || out["files"] != 1.0 || len(missing) != 1 || len(out["gaps"].([]any)) != 0 {
+		t.Fatalf("structured content = %v", out)
+	}
+
+	r, err = cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name:      "check_index",
+		Arguments: map[string]any{"path": p, "prefix": "letter"},
+	})
+	if err != nil || !r.IsError || !strings.Contains(text(r), "no file named letter-*") {
+		t.Fatalf("err = %v, result = %s", err, text(r))
+	}
+}

@@ -207,6 +207,73 @@ It prints the corpus first; on an empty corpus it exits 1, like a search with no
 the `corpus:` line. Without `markgrep`, the `grep` commands that `sweep` returns, which are
 line-based and miss a phrase split by a line break.
 
+### `check_index`
+
+Cross-checks the Markdown table that ends an append-only index (the session index, the letter index)
+against the files it lists, named `<prefix>-<number>-<YYYY-MM-DD>.md` in its folder. A row whose file
+was never written, or a file whose row was never appended, leaves both sides looking fine on their
+own: each one only shows up against the other.
+
+| Input | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `path` | string | required | Index file whose last content is the table. Trailing blank lines are allowed. Relative paths resolve against the server working directory. |
+| `prefix` | string | required | File name prefix, such as `sesion` or `carta`. |
+| `dir` | string | the index's folder | Folder holding the files. |
+| `number_column` | string | the first column | Header name of the number column, case-insensitive. |
+| `date_column` | string | none | Header name of a date column to compare with the date in each file name. Without it, dates are not compared. |
+
+It reports, and does not judge: a row without a file can be a documented absence, so read each list.
+It returns `rows`, `files` (well-formed names only), `dir`, `header`, `ok` (true when every list is
+empty) and these lists:
+
+- `missing_files`: rows whose number has no file (`number`, `line`);
+- `unindexed`: files whose number has no row;
+- `duplicate_rows`, `duplicate_files`: every row or file sharing its number with another (`001` and
+  `1` are the same number);
+- `date_mismatches`: with `date_column`, rows whose date differs from their file name (`number`,
+  `line`, `row_date`, `file`); a number with two files is reported as a duplicate and not compared;
+- `malformed`: `prefix-*` names without the expected shape;
+- `gaps`: numbers between the lowest and the highest that are in neither the index nor the folder.
+
+It fails, **checking nothing**, when:
+
+- the prefix is empty, or the file or the folder does not exist;
+- a table is not the last content of the file, or has no header and separator line;
+- a column named in the input is not in the header (the error lists the header), or appears twice;
+- any row has a different cell count than the header, or a number cell that is not a number. The
+  error names the first ten such rows by line number;
+- no file in the folder carries the prefix, which is a wrong prefix or folder far more often than an
+  empty index.
+
+**Fallback.** The core of the same check in `bash`:
+
+```bash
+# usage: check_index INDEX PREFIX [DIR]
+check_index() {
+  local dir=${3:-$(dirname "$1")} rows files
+  rows=$(awk -F'|' '
+    !/^ *\|/ { if (NF && n) after = 1; t = 0; next }    # any other line ends a table
+    !t { t = 1; after = n = 0; next }                    # header of a new table
+    ++n > 1 { c = $2; gsub(/ /, "", c); r[n] = c }       # first column; skips the separator
+    END { if (after) { print "text after the table" > "/dev/stderr"; exit 1 }
+          for (i = 2; i <= n; i++) print r[i] }' "$1") || return 1
+  if [ -n "$rows" ] && grep -qv '^[0-9][0-9]*$' <<<"$rows"; then
+    grep -v '^[0-9][0-9]*$' <<<"$rows" | sed 's/^/not a number: /'; return 1
+  fi
+  rows=$(sed 's/^0*\(.\)/\1/' <<<"$rows" | sort -n)
+  files=$(ls "$dir" | sed -n "s/^$2-0*\([0-9][0-9]*\)-[0-9]\{4\}-[0-9][0-9]-[0-9][0-9]\.md$/\1/p" | sort -n)
+  [ -n "$files" ] || { echo "no file named $2-NNN-YYYY-MM-DD.md in $dir"; return 1; }
+  echo "rows $(grep -c . <<<"$rows")  files $(grep -c . <<<"$files")"
+  comm -23 <(grep . <<<"$rows" | sort -u) <(sort -u <<<"$files") | sort -n | sed 's/^/row without file: /'
+  comm -13 <(grep . <<<"$rows" | sort -u) <(sort -u <<<"$files") | sort -n | sed 's/^/file without row: /'
+  uniq -d <<<"$rows" | sed 's/^/repeated row: /'
+  uniq -d <<<"$files" | sed 's/^/repeated file: /'
+}
+```
+
+The fallback reads the number from the first column only, and does not compare dates, list malformed
+names or gaps, or check cell counts.
+
 ## Install
 
 Requires Go 1.26 or later.

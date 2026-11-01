@@ -108,6 +108,59 @@ func Append(path string, cells []string, opts Options) (Result, error) {
 	return res, nil
 }
 
+// ReadClosingTable reads the file at path and locates the table that closes
+// it, allowing trailing blank lines; any other content after the table is an
+// error. It returns the lines, the index of the header line and the index of
+// the last row.
+func ReadClosingTable(path string) (lines []string, start, last int, err error) {
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, 0, 0, fmt.Errorf("file does not exist: %s", path)
+	}
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	lines = strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n")
+
+	last = len(lines) - 1
+	for last >= 0 && strings.TrimSpace(lines[last]) == "" {
+		last--
+	}
+	if last < 0 {
+		return nil, 0, 0, fmt.Errorf("%s is empty: no table", path)
+	}
+	if !IsTableLine(lines[last]) {
+		return nil, 0, 0, fmt.Errorf("the last content of %s is not a table row (line %d): the table must close the file", path, last+1)
+	}
+	start, err = TableStart(lines, last)
+	if err != nil {
+		return nil, 0, 0, fmt.Errorf("the table ending %s %w", path, err)
+	}
+	return lines, start, last, nil
+}
+
+// FindColumn returns the index of the header cell named name, ignoring case
+// and surrounding spaces. A name that is missing or appears twice is an error
+// that lists the header.
+func FindColumn(header []string, name string) (int, error) {
+	want := strings.TrimSpace(name)
+	found := -1
+	names := make([]string, len(header))
+	for i, h := range header {
+		names[i] = strings.TrimSpace(h)
+		if strings.EqualFold(names[i], want) {
+			if found >= 0 {
+				return 0, fmt.Errorf("column %q appears twice in the header", want)
+			}
+			found = i
+		}
+	}
+	if found < 0 {
+		return 0, fmt.Errorf("no column %q; the header has: %s", want, strings.Join(names, ", "))
+	}
+	return found, nil
+}
+
 // TableStart walks back from lines[last], a table row, to the first line of
 // its table and returns that index. The table must open with a header and a
 // separator line.
