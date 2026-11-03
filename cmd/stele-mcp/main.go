@@ -12,6 +12,7 @@ import (
 	"github.com/emezav/stele-mcp/internal/ascii"
 	"github.com/emezav/stele-mcp/internal/budget"
 	"github.com/emezav/stele-mcp/internal/clock"
+	"github.com/emezav/stele-mcp/internal/comments"
 	"github.com/emezav/stele-mcp/internal/index"
 	"github.com/emezav/stele-mcp/internal/rows"
 	"github.com/emezav/stele-mcp/internal/sum"
@@ -127,6 +128,18 @@ func checkBudgets(_ context.Context, _ *mcp.CallToolRequest, in checkBudgetsInpu
 	return nil, res, err
 }
 
+type checkCommentsInput struct {
+	Path    string   `json:"path" jsonschema:"Markdown file or directory to check, walked recursively without .git; relative paths resolve against the server working directory; .gitignore is not read, so ignored folders are checked"`
+	Include []string `json:"include,omitempty" jsonschema:"base-name globs; a file is checked only if it matches one; each glob must match some file; default *.md for a directory"`
+	Exclude []string `json:"exclude,omitempty" jsonschema:"base-name globs; a file matching any is skipped; each glob must match some file"`
+	Limit   int      `json:"limit,omitempty" jsonschema:"maximum findings returned (default 100); found always counts all of them"`
+}
+
+func checkComments(_ context.Context, _ *mcp.CallToolRequest, in checkCommentsInput) (*mcp.CallToolResult, comments.Result, error) {
+	res, err := comments.Check(in.Path, comments.Options{Include: in.Include, Exclude: in.Exclude, Limit: in.Limit})
+	return nil, res, err
+}
+
 func main() {
 	if err := newServer().Run(context.Background(), &mcp.StdioTransport{}); err != nil {
 		log.Fatal(err)
@@ -202,5 +215,16 @@ func newServer() *mcp.Server {
 			"Fallback without this server: the budgets block in the instance's protocol doc, or the check_budgets " +
 			"shell function in the stele-mcp README.",
 	}, checkBudgets)
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "check_comments",
+		Description: "Find the HTML comments in Markdown that do not do what they look like, which rereading the source " +
+			"does not show and rendering does: a <!-- inside a comment (nested: comments do not nest, the first --> " +
+			"closes both and the rest is live), a --> outside any comment (stray_close), a comment never closed " +
+			"(unclosed) and the empty forms <!--> and <!---> (abrupt). Fenced code blocks and inline code spans are " +
+			"not read. Returns files, comments (well-formed), found (all), the findings with path, line, column, kind " +
+			"and detail (up to limit, with truncated); ok is true when found is zero. Fails instead of reporting zero " +
+			"when a glob matches no file or no text file is left to read. " +
+			"Fallback without this server: the check_comments perl function in the stele-mcp README.",
+	}, checkComments)
 	return server
 }

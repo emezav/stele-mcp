@@ -258,3 +258,38 @@ func TestCheckBudgetsOverMCP(t *testing.T) {
 		t.Fatalf("err = %v, result = %s", err, text(r))
 	}
 }
+
+func TestCheckCommentsOverMCP(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "a.md"), []byte("<!-- a\n<!-- b -->\nlive -->\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cs := connect(t)
+
+	r, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name:      "check_comments",
+		Arguments: map[string]any{"path": dir},
+	})
+	if err != nil || r.IsError {
+		t.Fatalf("err = %v, result = %s", err, text(r))
+	}
+	out, ok := r.StructuredContent.(map[string]any)
+	if !ok {
+		t.Fatalf("structured content = %#v", r.StructuredContent)
+	}
+	findings, _ := out["findings"].([]any)
+	if out["ok"] != false || out["found"] != 2.0 || out["comments"] != 1.0 || len(findings) != 2 {
+		t.Fatalf("structured content = %v", out)
+	}
+	if f := findings[0].(map[string]any); f["kind"] != "nested" || f["line"] != 2.0 || f["path"] != "a.md" {
+		t.Fatalf("finding = %v", f)
+	}
+
+	r, err = cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name:      "check_comments",
+		Arguments: map[string]any{"path": dir, "exclude": []string{"*.txt"}},
+	})
+	if err != nil || !r.IsError || !strings.Contains(text(r), `glob "*.txt" matches no file`) {
+		t.Fatalf("err = %v, result = %s", err, text(r))
+	}
+}

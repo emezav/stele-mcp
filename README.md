@@ -423,6 +423,86 @@ check_budgets() {
 The fallback reads every table of a section, not only the first, and when a budget is not a whole
 number it fails after printing the rows before it.
 
+### `check_comments`
+
+Finds the HTML comments in Markdown files that do not do what they look like. HTML comments do not
+nest: the first `-->` closes the comment, whatever depth it seems to have, so commented-out
+scaffolding with a comment inside it, or with its closing sequence written as text, comes out live.
+Rereading the source does not show it; rendering does, and a template is often never rendered by the
+people who maintain it.
+
+| Input | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `path` | string | required | Markdown file or directory, walked recursively without `.git`. Relative paths resolve against the server working directory. |
+| `include` | string list | `*.md` for a directory | Base-name globs; a file is checked only if it matches one. |
+| `exclude` | string list | none | Base-name globs; a file matching any is skipped. |
+| `limit` | int | `100` | Maximum findings returned. |
+
+Each finding has `path`, `line`, `column` (in characters, from 1), `detail` and one `kind`:
+
+- `nested`: a `<!--` inside an open comment. The comment ends at the first `-->`, so what follows
+  that close was meant hidden and is live. The detail names where the outer comment opened.
+- `stray_close`: a `-->` outside any comment, usually the close the author meant for an outer
+  comment, or the closing sequence written as text inside a comment that already ended.
+- `unclosed`: a comment that never closes; everything after it is hidden. Reported where it opens.
+- `abrupt`: `<!-->` or `<!--->`, which are complete empty comments, so what follows is live.
+
+Fenced code blocks and inline code spans are not read: a marker written as an example in backticks is
+not a finding. Inside a comment nothing is code, as in HTML: a fence line there is comment text.
+
+It returns `root`, `files`, `comments` (comments that open and close), `ok` (true when nothing was
+found), `found` (every finding), `truncated`, the `findings` (up to `limit`) and `binary` (files with a
+NUL byte, listed and not read). Paths are relative to `root`, with forward slashes.
+
+It fails, **reporting nothing**, when the path does not exist, a glob is malformed or matches no file,
+or no text file is left to read.
+
+**Fallback.** The same scanner in `perl`, over the files given:
+
+```bash
+# usage: check_comments FILE...   (for a folder, see below)
+check_comments() {
+  perl -CSD -ne '
+    sub hit { printf "%s:%d:%d: %s\n", $ARGV, $_[0], $_[1] + 1, $_[2] }
+    chomp(my $s = $_); $s =~ s/\r$//;
+    if (!$in && length $fc) {
+      $fc = "" if $s =~ /^ {0,3}(\Q$fc\E+)\s*$/ && length $1 >= $fl;
+    } elsif (!$in && $s =~ /^ {0,3}(`{3,}(?!.*`)|~{3,})/) {
+      ($fc, $fl) = (substr($1, 0, 1), length $1);
+    } else {
+      my $p = 0;
+      while ($p < length $s) {
+        if ($in) {
+          my $e = index $s, "-->", $p; my $stop = $e < 0 ? length $s : $e;
+          for (my $q = $p; ($q = index $s, "<!--", $q) >= 0 && $q < $stop; $q += 4) {
+            hit($., $q, "nested (comment opened at line $ol)");
+          }
+          last if $e < 0;
+          ($in, $p) = (0, $e + 3); next;
+        }
+        substr($s, $p) =~ /(`+|<!--|-->)/ or last;
+        my ($at, $m) = ($p + $-[1], $1);
+        if ($m =~ /^`/) {
+          my $n = length $m;
+          $p = substr($s, $at + $n) =~ /(?<!`)`{$n}(?!`)/ ? $at + $n + $+[0] : $at + $n;
+        } elsif ($m eq "-->") {
+          hit($., $at, "stray_close"); $p = $at + 3;
+        } elsif (substr($s, $at + 4) =~ /^-?>/) {
+          hit($., $at, "abrupt"); $p = $at + 4 + $+[0];
+        } else {
+          ($in, $ol, $oc, $p) = (1, $., $at, $at + 4);
+        }
+      }
+    }
+    if (eof) { hit($ol, $oc, "unclosed") if $in; ($in, $fc) = (0, ""); close ARGV }' "$@"
+}
+```
+
+For a folder, export the function first (`export -f check_comments`), then:
+`find DIR -name .git -prune -o -name '*.md' -print0 | xargs -0 bash -c 'check_comments "$@"' _`. The fallback does not count comments,
+skip binaries or apply globs. Neither the tool nor the fallback knows indented code blocks or code
+spans that cross a line: a marker in one of those is read as live.
+
 ## Install
 
 Requires Go 1.26 or later.

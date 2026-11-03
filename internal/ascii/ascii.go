@@ -11,13 +11,13 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
-	"path/filepath"
 	"sort"
 	"unicode/utf8"
 
 	"golang.org/x/text/unicode/runenames"
+
+	"github.com/emezav/stele-mcp/internal/walk"
 )
 
 // DefaultLimit is how many findings come back when Options.Limit is not set.
@@ -89,7 +89,7 @@ func Check(root string, o Options) (Result, error) {
 	if root == "" {
 		return Result{}, errors.New("path is required: the file or directory to check")
 	}
-	files, err := collect(root, o.Include, o.Exclude)
+	files, err := walk.Collect(root, o.Include, o.Exclude)
 	if err != nil {
 		return Result{}, err
 	}
@@ -114,7 +114,7 @@ func Check(root string, o Options) (Result, error) {
 		if err != nil {
 			return Result{}, err
 		}
-		rel := relative(root, f)
+		rel := walk.Relative(root, f)
 		if bytes.IndexByte(data, 0) >= 0 {
 			res.Binary = append(res.Binary, rel)
 			continue
@@ -172,78 +172,4 @@ func scan(data []byte, found func(line, col int, fd Finding)) {
 		}
 		i += size
 	}
-}
-
-// collect lists the files to read under root, sorted, applying the globs.
-func collect(root string, include, exclude []string) ([]string, error) {
-	info, err := os.Stat(root)
-	if err != nil {
-		return nil, err
-	}
-	var all []string
-	if info.IsDir() {
-		err = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-			if d.IsDir() && d.Name() == ".git" {
-				return filepath.SkipDir
-			}
-			if d.Type().IsRegular() {
-				all = append(all, p)
-			}
-			return nil
-		})
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		all = []string{root}
-	}
-
-	used := map[string]bool{}
-	var files []string
-	for _, p := range all {
-		base := filepath.Base(p)
-		if len(include) > 0 && !matchAny(include, base, used) {
-			continue
-		}
-		if matchAny(exclude, base, used) {
-			continue
-		}
-		files = append(files, p)
-	}
-	for _, g := range append(append([]string{}, include...), exclude...) {
-		if _, err := filepath.Match(g, ""); err != nil {
-			return nil, fmt.Errorf("bad glob %q: %v", g, err)
-		}
-		if !used[g] {
-			return nil, fmt.Errorf("glob %q matches no file under %s", g, root)
-		}
-	}
-	sort.Strings(files)
-	return files, nil
-}
-
-// matchAny reports whether base matches one of globs, and marks every glob
-// that matches as used, so a dead filter can be reported.
-func matchAny(globs []string, base string, used map[string]bool) bool {
-	hit := false
-	for _, g := range globs {
-		if ok, _ := filepath.Match(g, base); ok {
-			used[g] = true
-			hit = true
-		}
-	}
-	return hit
-}
-
-// relative turns p into a path relative to root with forward slashes. When
-// root is the file itself the path is kept as given.
-func relative(root, p string) string {
-	rel, err := filepath.Rel(root, p)
-	if err != nil || rel == "." {
-		return filepath.ToSlash(p)
-	}
-	return filepath.ToSlash(rel)
 }
