@@ -215,3 +215,46 @@ func TestCheckASCIIOverMCP(t *testing.T) {
 		t.Fatalf("err = %v, result = %s", err, text(r))
 	}
 }
+
+func TestCheckBudgetsOverMCP(t *testing.T) {
+	root := t.TempDir()
+	cfg := "## Meta\n\n## Rutas\n\n| R | V |\n| --- | --- |\n| base | docs |\n\n## Nombres\n\n## Features\n\n" +
+		"## Presupuestos\n\n| Doc | Max |\n| --- | --- |\n| entry | 1 |\n| SKILL.md | 400 |\n\n## Wording\n"
+	if err := os.WriteFile(filepath.Join(root, "stele.config.md"), []byte(cfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "docs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "docs", "guia-agente.md"), []byte("a\nb\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cs := connect(t)
+
+	r, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name:      "check_budgets",
+		Arguments: map[string]any{"root": root},
+	})
+	if err != nil || r.IsError {
+		t.Fatalf("err = %v, result = %s", err, text(r))
+	}
+	out, ok := r.StructuredContent.(map[string]any)
+	if !ok {
+		t.Fatalf("structured content = %#v", r.StructuredContent)
+	}
+	budgets, _ := out["budgets"].([]any)
+	if out["ok"] != false || len(budgets) != 1 || len(out["skipped"].([]any)) != 1 {
+		t.Fatalf("structured content = %v", out)
+	}
+	if b := budgets[0].(map[string]any); b["file"] != "docs/guia-agente.md" || b["lines"] != 2.0 || b["over"] != 1.0 {
+		t.Fatalf("budget = %v", b)
+	}
+
+	r, err = cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name:      "check_budgets",
+		Arguments: map[string]any{"root": t.TempDir()},
+	})
+	if err != nil || !r.IsError || !strings.Contains(text(r), "manifest does not exist") {
+		t.Fatalf("err = %v, result = %s", err, text(r))
+	}
+}

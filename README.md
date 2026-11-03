@@ -336,6 +336,93 @@ The fallback guesses binaries with Perl's `-B`, which also calls an empty file b
 invalid line, not each invalid byte; and it does not count by character, apply globs, or fail on an
 empty folder.
 
+### `check_budgets`
+
+Measures the documents of a stele instance against the line budgets of its manifest. A budget that
+nobody measures does not fail when it is written: it fails by growing a little each session, and no
+session notices. The tool reads the budgets and the role names from the manifest
+(`stele.config.md`) instead of carrying its own, so a budget raised there is the one measured here.
+
+| Input | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `root` | string | the server working directory | Project root holding the instance. |
+| `config` | string | `stele.config.md` under `root` | Manifest path. |
+
+Sections are found **by position**, as the manifest's parsing contract says (Meta, Paths, Names,
+Features, Budgets, Wording), not by their titles, which follow the project's language. A document's
+path is `base`, then its container (`history_dir` for state, handover, index, audit and effort;
+`correspondence_dir` for the letter index), then the name in the names table, or the kit's default
+when the table has no row for it. Lines are counted as an editor shows them: a last line without a
+newline counts.
+
+It returns `config`, `section` (the title of the section it read, to check it is the budgets one),
+`ok` (true when every budget holds), `budgets` (`role`, `file`, `lines`, `max`, `over`, `ok`,
+`missing`, and the manifest `line` of the row) and `skipped`: the rows not measured, with the
+`reason`. A row is skipped when its key is not a document role (the kit's own budgets, such as
+`SKILL.md`), its budget is the sentinel, or the role is disabled in the names table. A document that
+does not exist is reported as `missing`, and makes `ok` false.
+
+It fails, **measuring nothing**, when:
+
+- the manifest does not exist, or has fewer `##` sections than the contract names;
+- a budget is not a whole number (the error gives its line in the manifest);
+- no row measures a document role: zero budgets over zero documents reads like a clean instance.
+
+**Fallback.** The instance's own protocol doc carries a budgets block for its own paths. This one
+resolves the paths from the manifest, like the tool, in `awk`:
+
+```bash
+# usage: check_budgets [ROOT]
+check_budgets() {
+  local cfg=${1:-.}/stele.config.md
+  [ -f "$cfg" ] || { echo "manifest does not exist: $cfg"; return 1; }
+  awk -F'|' -v root="${1:-.}" '
+    function trim(s) { gsub(/^[ `]+|[ `]+$/, "", s); return s }
+    function off(v) { return v == "-" || v == "---" || v == "\342\200\224" }
+    function name(r) { return (3, r) in val ? val[3, r] : def[r] }
+    BEGIN {
+      split("entry guia-agente.md gotchas memory.md charter design.md manual manual.md " \
+            "protocol protocol.md specs requirements.md architecture architecture.md " \
+            "state latest.md handover handover.md index index.md audit audit.md " \
+            "effort esfuerzo.md correspondence cartas.md history_dir history/ " \
+            "correspondence_dir correspondencia/", d, " ")
+      for (i = 1; i in d; i += 2) def[d[i]] = d[i + 1]
+      split("state handover index audit effort", h, " "); for (i in h) dir[h[i]] = "history_dir"
+      dir["correspondence"] = "correspondence_dir"
+    }
+    /^(```|~~~)/ { fence = !fence; next }
+    fence { next }
+    /^## / { s++; t = 0; next }
+    /^ *\|/ { if (t++ < 2) next
+              k = trim($2); val[s, k] = trim($3)
+              if (s == 5) { key[++n] = k; lim[n] = val[s, k]; at[n] = NR }
+              next }
+    { t = 0 }
+    END {
+      if (s < 6) { print cfg ": " s " ## sections, the contract names 6"; exit 1 }
+      base = (2, "base") in val ? val[2, "base"] : "."; sub(/\/$/, "", base)
+      for (i = 1; i <= n; i++) {
+        k = key[i]
+        if (!(k in def) || k ~ /_dir$/) { print "skip " k ": not a document role"; continue }
+        if (off(lim[i])) { print "skip " k ": no budget"; continue }
+        if (lim[i] !~ /^[0-9]+$/) { print "line " at[i] ": budget of " k " is not a whole number"; bad = 1; exit 1 }
+        if (off(name(k)) || (k in dir && off(name(dir[k])))) { print "skip " k ": role disabled"; continue }
+        f = base "/" (k in dir ? name(dir[k]) : "") name(k); sub(/^\.\//, "", f)
+        c = 0; while ((r = getline line < (root "/" f)) > 0) c++
+        close(root "/" f); m++
+        if (r < 0) { printf "  %-14s %s MISSING\n", k, f; fail = 1; continue }
+        l = lim[i] + 0; st = c <= l ? "OK" : "OVER by " c - l; if (c > l) fail = 1
+        printf "  %-14s %4d / %-4d %s  %s\n", k, c, lim[i], st, f
+      }
+      if (!m) { print "no row measures a document role"; exit 1 }
+      exit fail
+    }' "$cfg"
+}
+```
+
+The fallback reads every table of a section, not only the first, and when a budget is not a whole
+number it fails after printing the rows before it.
+
 ## Install
 
 Requires Go 1.26 or later.

@@ -10,6 +10,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/emezav/stele-mcp/internal/ascii"
+	"github.com/emezav/stele-mcp/internal/budget"
 	"github.com/emezav/stele-mcp/internal/clock"
 	"github.com/emezav/stele-mcp/internal/index"
 	"github.com/emezav/stele-mcp/internal/rows"
@@ -116,6 +117,16 @@ func checkASCII(_ context.Context, _ *mcp.CallToolRequest, in checkASCIIInput) (
 	return nil, res, err
 }
 
+type checkBudgetsInput struct {
+	Root   string `json:"root,omitempty" jsonschema:"project root holding the instance; default the server working directory"`
+	Config string `json:"config,omitempty" jsonschema:"manifest path; default stele.config.md under root"`
+}
+
+func checkBudgets(_ context.Context, _ *mcp.CallToolRequest, in checkBudgetsInput) (*mcp.CallToolResult, budget.Result, error) {
+	res, err := budget.Check(in.Root, budget.Options{Config: in.Config})
+	return nil, res, err
+}
+
 func main() {
 	if err := newServer().Run(context.Background(), &mcp.StdioTransport{}); err != nil {
 		log.Fatal(err)
@@ -180,5 +191,16 @@ func newServer() *mcp.Server {
 			"instead of reporting zero when a glob matches no file or no text file is left to read. " +
 			"Fallback without this server: the perl command in the stele-mcp README.",
 	}, checkASCII)
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "check_budgets",
+		Description: "Measure the documents of a stele instance against the line budgets in its manifest " +
+			"(stele.config.md, the budgets section, found by position). Reads the budgets and the role names " +
+			"from the manifest instead of carrying its own. Returns each measured role with file, lines, max, " +
+			"over and ok, a missing document as missing, and the rows not measured (the kit's own budgets, a " +
+			"sentinel budget, a disabled role) as skipped with the reason; ok is true when every budget holds. " +
+			"Fails if a budget is not a whole number or no row measures a document role. " +
+			"Fallback without this server: the budgets block in the instance's protocol doc, or the check_budgets " +
+			"shell function in the stele-mcp README.",
+	}, checkBudgets)
 	return server
 }
