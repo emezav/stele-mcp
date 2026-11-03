@@ -11,6 +11,7 @@ import (
 
 	"github.com/emezav/stele-mcp/internal/ascii"
 	"github.com/emezav/stele-mcp/internal/budget"
+	"github.com/emezav/stele-mcp/internal/cadence"
 	"github.com/emezav/stele-mcp/internal/clock"
 	"github.com/emezav/stele-mcp/internal/comments"
 	"github.com/emezav/stele-mcp/internal/handover"
@@ -153,6 +154,18 @@ func checkHandover(_ context.Context, _ *mcp.CallToolRequest, in checkHandoverIn
 	return nil, res, err
 }
 
+type checkCadenceInput struct {
+	Root    string `json:"root,omitempty" jsonschema:"project root holding the instance; default the server working directory"`
+	Config  string `json:"config,omitempty" jsonschema:"manifest path; default stele.config.md under root"`
+	Today   string `json:"today,omitempty" jsonschema:"date YYYY-MM-DD to count days to; default the machine's local date"`
+	Session int    `json:"session,omitempty" jsonschema:"current session number; default the highest number in the session index"`
+}
+
+func checkCadence(_ context.Context, _ *mcp.CallToolRequest, in checkCadenceInput) (*mcp.CallToolResult, cadence.Result, error) {
+	res, err := cadence.Check(in.Root, cadence.Options{Config: in.Config, Today: in.Today, Session: in.Session})
+	return nil, res, err
+}
+
 func main() {
 	if err := newServer().Run(context.Background(), &mcp.StdioTransport{}); err != nil {
 		log.Fatal(err)
@@ -250,5 +263,15 @@ func newServer() *mcp.Server {
 			"handover does not exist or has no state. " +
 			"Fallback without this server: the check_handover shell function in the stele-mcp README.",
 	}, checkHandover)
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "check_cadence",
+		Description: "Compute the two reminders the close ritual of a stele instance writes in its state document: " +
+			"audit (sessions since the last session covered by the last audit row, against audit_every_n_sessions; " +
+			"overdue when more than the cadence, and when never audited) and kit (days since kit_revisado, against " +
+			"update_every_n_days). Reads the manifest, the session index and the audit log. Each reminder has a " +
+			"status (ok, overdue, off, no_reminder), its numbers and an advice line; ok is true when neither is " +
+			"overdue. Nothing is triggered. Fails if a threshold, a date or the session range is malformed. " +
+			"Fallback without this server: the check_cadence shell function in the stele-mcp README.",
+	}, checkCadence)
 	return server
 }

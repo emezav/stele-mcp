@@ -560,6 +560,74 @@ check_handover() {
 
 The fallback returns 0 only for `current`, and does not report `dirty` or ancestry.
 
+### `check_cadence`
+
+Computes the two reminders the close ritual of a stele instance writes in its state document: whether
+an audit is due, and whether the kit is due a look at its origin. Neither triggers anything; each is a
+comparison of two numbers, but the numbers live in three documents (the manifest, the session index
+and the audit log), and that is where the comparison goes wrong.
+
+| Input | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `root` | string | the server working directory | Project root holding the instance. |
+| `config` | string | `stele.config.md` under `root` | Manifest path. |
+| `today` | string | the machine's local date | Date `YYYY-MM-DD` to count days to. |
+| `session` | int | the highest number in the session index | Current session. At close time the index already has its row. |
+
+- **Audit.** The last audit row's `Sesiones` column (the third) is the range it covered; its last
+  number is the last session covered. `since` is the current session minus that one, and the audit
+  is `overdue` when `since` is **more than** `audit_every_n_sessions`, as the kit words it: with
+  session 10 covered and a cadence of 10, it is due when closing session 21. No audit log means never
+  audited, counted from session 0. `off` when `audit_log` is off; `no_reminder` when the cadence is
+  the sentinel.
+- **Kit.** `days` is `today` minus `kit_revisado`, and the kit is `overdue` when `days` is more than
+  `update_every_n_days`. `no_reminder` when `kit_origen` or `kit_revisado` is empty or the sentinel
+  (a self-hosted kit has no origin), or the threshold is the sentinel.
+
+A missing threshold takes the kit default (10 sessions, 30 days). It returns `config`, `today`, `ok`
+(true when neither reminder is overdue), and `audit` (`status`, `every`, `log`, `audits`,
+`last_covered`, `session`, `since`, `advice`) and `kit` (`status`, `origin`, `reviewed`, `every`,
+`days`, `advice`). The advice says when the next one is due.
+
+It fails when the manifest does not exist, `today` or `kit_revisado` is not `YYYY-MM-DD`, a threshold
+is not a whole number, the session index has no session number, or the last audit row has no number
+in its session range.
+
+**Fallback.** The same reading in `awk`, `tail` and `date` (GNU `date -d`, as in Git for Windows):
+
+```bash
+# usage: check_cadence [ROOT] [YYYY-MM-DD]
+check_cadence() {
+  local root=${1:-.} today=${2:-$(date +%F)} base hist idx log every last covered n origin seen days
+  [ -f "$root/stele.config.md" ] || { echo "manifest does not exist: $root/stele.config.md"; return 1; }
+  val() {  # val SECTION_POSITION KEY: column 2 of the row, without spaces or backticks
+    awk -F'|' -v n="$1" -v k="$2" '/^(```|~~~)/ { f = !f } f { next } /^## / { s++; next }
+      s == n && /^ *\|/ { c = $2; gsub(/[ `]/, "", c); if (c == k) { v = $3; gsub(/^[ `]+|[ `]+$/, "", v); print v; exit } }' \
+      "$root/stele.config.md"
+  }
+  base=$(val 2 base); base=${base:-.}; base=${base%/}
+  hist=$(val 3 history_dir); hist=${hist:-history/}
+  idx=$root/$base/$hist$(val 3 index); [ "$idx" = "$root/$base/$hist" ] && idx=${idx}index.md
+  log=$root/$base/$hist$(val 3 audit); [ "$log" = "$root/$base/$hist" ] && log=${log}audit.md
+  every=$(val 4 audit_every_n_sessions); every=${every:-10}
+  last=$(awk -F'|' '/^ *\|/ { c = $2; gsub(/ /, "", c); if (c ~ /^[0-9]+$/ && c + 0 > m) m = c + 0 } END { print m + 0 }' "$idx")
+  covered=0
+  [ -f "$log" ] && covered=$(tail -n 1 "$log" | awk -F'|' '{ n = split($4, a, /[^0-9]+/); for (i = n; i; i--) if (a[i] != "") { print a[i] + 0; exit } }')
+  if [ "$(val 4 audit_log)" = off ]; then echo "audit: off"
+  else n=$((last - covered))
+    [ "$n" -gt "$every" ] && echo "audit: OVERDUE, $n sessions since session $covered (every $every)" \
+                          || echo "audit: ok, $n sessions since session $covered; due when closing $((covered + every + 1))"
+  fi
+  origin=$(val 1 kit_origen); seen=$(val 1 kit_revisado); every=$(val 4 update_every_n_days); every=${every:-30}
+  case "$origin" in ''|-|---|$'\342\200\224') echo "kit: no kit_origen, no reminder"; return 0 ;; esac
+  days=$(( ( $(date -d "$today" +%s) - $(date -d "$seen" +%s) ) / 86400 ))
+  [ "$days" -gt "$every" ] && echo "kit: OVERDUE, $days days since $seen (every $every)" \
+                           || echo "kit: ok, $days days since $seen (every $every)"
+}
+```
+
+The fallback does not handle a sentinel threshold or a missing index, and does not check the formats.
+
 ## Install
 
 Requires Go 1.26 or later.

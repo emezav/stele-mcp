@@ -326,3 +326,44 @@ func TestCheckHandoverOverMCP(t *testing.T) {
 		t.Fatalf("err = %v, result = %s", err, text(r))
 	}
 }
+
+func TestCheckCadenceOverMCP(t *testing.T) {
+	root := t.TempDir()
+	cfg := "## Meta\n\n| P | V |\n| --- | --- |\n| kit_origen | x |\n| kit_revisado | 2026-11-01 |\n\n## Rutas\n\n## Nombres\n\n" +
+		"## Features\n\n| F | V |\n| --- | --- |\n| audit_every_n_sessions | 2 |\n\n## Presupuestos\n\n## Wording\n"
+	if err := os.WriteFile(filepath.Join(root, "stele.config.md"), []byte(cfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "history"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "history", "index.md"), []byte("| N |\n| --- |\n| 3 |\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cs := connect(t)
+
+	r, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name:      "check_cadence",
+		Arguments: map[string]any{"root": root, "today": "2026-11-11"},
+	})
+	if err != nil || r.IsError {
+		t.Fatalf("err = %v, result = %s", err, text(r))
+	}
+	out, ok := r.StructuredContent.(map[string]any)
+	if !ok {
+		t.Fatalf("structured content = %#v", r.StructuredContent)
+	}
+	audit, _ := out["audit"].(map[string]any)
+	kit, _ := out["kit"].(map[string]any)
+	if out["ok"] != false || audit["status"] != "overdue" || audit["since"] != 3.0 || kit["status"] != "ok" || kit["days"] != 10.0 {
+		t.Fatalf("structured content = %v", out)
+	}
+
+	r, err = cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name:      "check_cadence",
+		Arguments: map[string]any{"root": root, "today": "11/11/2026"},
+	})
+	if err != nil || !r.IsError || !strings.Contains(text(r), "not YYYY-MM-DD") {
+		t.Fatalf("err = %v, result = %s", err, text(r))
+	}
+}
