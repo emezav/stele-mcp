@@ -13,6 +13,7 @@ import (
 	"github.com/emezav/stele-mcp/internal/budget"
 	"github.com/emezav/stele-mcp/internal/clock"
 	"github.com/emezav/stele-mcp/internal/comments"
+	"github.com/emezav/stele-mcp/internal/handover"
 	"github.com/emezav/stele-mcp/internal/index"
 	"github.com/emezav/stele-mcp/internal/rows"
 	"github.com/emezav/stele-mcp/internal/sum"
@@ -140,6 +141,18 @@ func checkComments(_ context.Context, _ *mcp.CallToolRequest, in checkCommentsIn
 	return nil, res, err
 }
 
+type checkHandoverInput struct {
+	Root   string `json:"root,omitempty" jsonschema:"project root holding the instance; default the server working directory"`
+	Config string `json:"config,omitempty" jsonschema:"manifest path; default stele.config.md under root"`
+	Path   string `json:"path,omitempty" jsonschema:"handover file; default the handover role of the manifest"`
+	Dir    string `json:"dir,omitempty" jsonschema:"git repository to compare with; default root"`
+}
+
+func checkHandover(_ context.Context, _ *mcp.CallToolRequest, in checkHandoverInput) (*mcp.CallToolResult, handover.Result, error) {
+	res, err := handover.Check(in.Root, handover.Options{Config: in.Config, Path: in.Path, Dir: in.Dir})
+	return nil, res, err
+}
+
 func main() {
 	if err := newServer().Run(context.Background(), &mcp.StdioTransport{}); err != nil {
 		log.Fatal(err)
@@ -226,5 +239,16 @@ func newServer() *mcp.Server {
 			"when a glob matches no file or no text file is left to read. " +
 			"Fallback without this server: the check_comments perl function in the stele-mcp README.",
 	}, checkComments)
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "check_handover",
+		Description: "Check whether the handover of a stele instance is still current: read its state (first word of " +
+			"the Estado section) and its seal (first commit hash of the Sello section) and compare the seal with " +
+			"git HEAD. Verdict current (seal is HEAD), stale (work happened after the handover: the tree rules; with " +
+			"behind, the commits after the seal), unknown (seal is not a commit here), no_seal or no_vcs. Also returns " +
+			"active (state is not SIN_TRABAJO_ACTIVO) and dirty (uncommitted changes to versioned files); ok is true " +
+			"when the verdict is current. Finds the handover through the manifest unless path is given. Fails if the " +
+			"handover does not exist or has no state. " +
+			"Fallback without this server: the check_handover shell function in the stele-mcp README.",
+	}, checkHandover)
 	return server
 }

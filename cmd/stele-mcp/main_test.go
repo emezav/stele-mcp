@@ -293,3 +293,36 @@ func TestCheckCommentsOverMCP(t *testing.T) {
 		t.Fatalf("err = %v, result = %s", err, text(r))
 	}
 }
+
+func TestCheckHandoverOverMCP(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "handover.md")
+	if err := os.WriteFile(p, []byte("## Estado\n\nEN_PROGRESO\n\n## Sello\n\n`abcdef1`\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cs := connect(t)
+
+	// A temp folder is not a repository: the verdict is no_vcs, not an error.
+	r, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name:      "check_handover",
+		Arguments: map[string]any{"root": dir, "path": p},
+	})
+	if err != nil || r.IsError {
+		t.Fatalf("err = %v, result = %s", err, text(r))
+	}
+	out, ok := r.StructuredContent.(map[string]any)
+	if !ok {
+		t.Fatalf("structured content = %#v", r.StructuredContent)
+	}
+	if out["verdict"] != "no_vcs" || out["state"] != "EN_PROGRESO" || out["active"] != true || out["seal"] != "abcdef1" || out["ok"] != false {
+		t.Fatalf("structured content = %v", out)
+	}
+
+	r, err = cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name:      "check_handover",
+		Arguments: map[string]any{"root": dir},
+	})
+	if err != nil || !r.IsError || !strings.Contains(text(r), "manifest does not exist") {
+		t.Fatalf("err = %v, result = %s", err, text(r))
+	}
+}

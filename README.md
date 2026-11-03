@@ -503,6 +503,63 @@ For a folder, export the function first (`export -f check_comments`), then:
 skip binaries or apply globs. Neither the tool nor the fallback knows indented code blocks or code
 spans that cross a line: a marker in one of those is read as live.
 
+### `check_handover`
+
+Checks whether the handover of a stele instance is still current. The handover carries a seal: the
+`HEAD` commit when the checkpoint was written. If it differs from today's `HEAD`, work happened after
+the handover was written, and the tree, not the handover, says where things are. The comparison is
+one line, and it is the only thing that tells a current checkpoint from an expired one.
+
+| Input | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `root` | string | the server working directory | Project root holding the instance. |
+| `config` | string | `stele.config.md` under `root` | Manifest path, used to find the handover. |
+| `path` | string | the manifest's handover role | Handover file, if not the one the manifest names. |
+| `dir` | string | `root` | Git repository to compare with. |
+
+The state is the first word of the `## Estado` section (`## State` and `## Status` are accepted too);
+the seal is the first commit hash, 7 to 40 hex characters, of the `## Sello` (or `## Seal`) section,
+with or without backticks. A later hash on the same section, such as the commit a long piece of work
+opened on, is not the seal.
+
+It returns `handover`, `state`, `active` (the state is not `SIN_TRABAJO_ACTIVO`), `seal` and its
+`seal_line`, `head`, `resolved` (the seal as a full hash), `dirty` (uncommitted changes to versioned
+files), `advice`, `ok` (true when the verdict is `current`) and the `verdict`:
+
+- `current`: the seal is `HEAD`;
+- `stale`: the seal is another commit. With `ancestor`, `behind` says how many commits came after it;
+  without it, history was rewritten or the seal is on another branch;
+- `unknown`: the seal is not a commit of this repository, or is ambiguous;
+- `no_seal`: the section is missing or has no hash. Without version control, the kit asks for what is
+  observed on disk instead, and that cannot be checked by a tool;
+- `no_vcs`: `dir` is not a git repository.
+
+It fails when the manifest is needed and does not exist, or the handover does not exist or has no
+state.
+
+**Fallback.** The same reading in `awk` and the comparison with `git`:
+
+```bash
+# usage: check_handover HANDOVER [REPO]
+check_handover() {
+  local state seal full head
+  state=$(awk 'tolower($0) ~ /^## (estado|state|status) *$/ { s = 1; next }
+               /^## / { s = 0 } s && NF { gsub(/[*`]/, ""); print $1; exit }' "$1")
+  [ -n "$state" ] || { echo "no state in $1"; return 1; }
+  seal=$(awk 'tolower($0) ~ /^## (sello|seal) *$/ { s = 1; next } /^## / { s = 0 }
+              s && match($0, /[0-9a-fA-F]{7,40}/) { print substr($0, RSTART, RLENGTH); exit }' "$1")
+  echo "state $state"
+  head=$(git -C "${2:-.}" rev-parse HEAD) || { echo "verdict no_vcs"; return 1; }
+  [ -n "$seal" ] || { echo "verdict no_seal"; return 1; }
+  full=$(git -C "${2:-.}" rev-parse --verify --quiet "$seal^{commit}") || { echo "seal $seal  verdict unknown"; return 1; }
+  if [ "$full" = "$head" ]; then echo "seal $seal  verdict current"; return 0; fi
+  echo "seal $seal  verdict stale, HEAD is $(git -C "${2:-.}" rev-list --count "$full..HEAD") commit(s) after it"
+  return 1
+}
+```
+
+The fallback returns 0 only for `current`, and does not report `dirty` or ancestry.
+
 ## Install
 
 Requires Go 1.26 or later.
