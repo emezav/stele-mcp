@@ -367,3 +367,44 @@ func TestCheckCadenceOverMCP(t *testing.T) {
 		t.Fatalf("err = %v, result = %s", err, text(r))
 	}
 }
+
+func TestNextSessionOverMCP(t *testing.T) {
+	root := t.TempDir()
+	cfg := "## Meta\n\n## Rutas\n\n## Nombres\n\n## Features\n\n## Presupuestos\n\n## Wording\n"
+	if err := os.WriteFile(filepath.Join(root, "stele.config.md"), []byte(cfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "history"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "history", "index.md"), []byte("| N |\n| --- |\n| 7 |\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "history", "sesion-007-2026-11-01.md"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cs := connect(t)
+
+	r, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name:      "next_session",
+		Arguments: map[string]any{"root": root, "today": "2026-11-03"},
+	})
+	if err != nil || r.IsError {
+		t.Fatalf("err = %v, result = %s", err, text(r))
+	}
+	out, ok := r.StructuredContent.(map[string]any)
+	if !ok {
+		t.Fatalf("structured content = %#v", r.StructuredContent)
+	}
+	if out["ok"] != true || out["number"] != 8.0 || out["path"] != "history/sesion-008-2026-11-03.md" || out["date_verdict"] != "given" {
+		t.Fatalf("structured content = %v", out)
+	}
+
+	r, err = cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name:      "next_session",
+		Arguments: map[string]any{"root": t.TempDir()},
+	})
+	if err != nil || !r.IsError || !strings.Contains(text(r), "manifest does not exist") {
+		t.Fatalf("err = %v, result = %s", err, text(r))
+	}
+}

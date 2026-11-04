@@ -83,3 +83,25 @@ func TestReadFailsOnTooFewSections(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+func TestContainerPathAndName(t *testing.T) {
+	m, err := Read(Write(t, Fixture))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := m.ContainerPath("history_dir"); err != nil || got != "docs/hist" {
+		t.Errorf("history_dir = %q, %v", got, err)
+	}
+	if got, err := m.ContainerPath("correspondence_dir"); err != nil || got != "docs/correspondencia" {
+		t.Errorf("correspondence_dir = %q, %v", got, err)
+	}
+	if _, err := m.ContainerPath("entry"); err == nil {
+		t.Error("entry is not a container")
+	}
+	if got, err := m.Name("session"); err != nil || got != "sesion-{NNN}-{YYYY-MM-DD}.md" {
+		t.Errorf("session = %q, %v", got, err)
+	}
+	if _, err := m.Name("manual"); !errors.Is(err, ErrDisabled) {
+		t.Errorf("manual err = %v", err)
+	}
+}

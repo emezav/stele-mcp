@@ -16,6 +16,7 @@ import (
 	"github.com/emezav/stele-mcp/internal/comments"
 	"github.com/emezav/stele-mcp/internal/handover"
 	"github.com/emezav/stele-mcp/internal/index"
+	"github.com/emezav/stele-mcp/internal/next"
 	"github.com/emezav/stele-mcp/internal/rows"
 	"github.com/emezav/stele-mcp/internal/sum"
 	"github.com/emezav/stele-mcp/internal/sweep"
@@ -166,6 +167,17 @@ func checkCadence(_ context.Context, _ *mcp.CallToolRequest, in checkCadenceInpu
 	return nil, res, err
 }
 
+type nextSessionInput struct {
+	Root   string `json:"root,omitempty" jsonschema:"project root holding the instance; default the server working directory"`
+	Config string `json:"config,omitempty" jsonschema:"manifest path; default stele.config.md under root"`
+	Today  string `json:"today,omitempty" jsonschema:"date YYYY-MM-DD for the file name; default the machine's local date, probed like the today tool"`
+}
+
+func nextSession(_ context.Context, _ *mcp.CallToolRequest, in nextSessionInput) (*mcp.CallToolResult, next.Result, error) {
+	res, err := next.Check(in.Root, next.Options{Config: in.Config, Today: in.Today})
+	return nil, res, err
+}
+
 func main() {
 	if err := newServer().Run(context.Background(), &mcp.StdioTransport{}); err != nil {
 		log.Fatal(err)
@@ -273,5 +285,16 @@ func newServer() *mcp.Server {
 			"overdue. Nothing is triggered. Fails if a threshold, a date or the session range is malformed. " +
 			"Fallback without this server: the check_cadence shell function in the stele-mcp README.",
 	}, checkCadence)
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "next_session",
+		Description: "Compose the session record a stele close is about to write: the next number (one more than " +
+			"the highest in the session index and in the history folder), padded as the manifest's session pattern " +
+			"says, the file name with the date, and the exact paths of the record, the index and the effort log, " +
+			"since an append to a mistyped path creates a new file and fails nowhere. The date is the machine's, " +
+			"with the today tool's verdict, unless given. ok is false when the index and the folder end at different " +
+			"numbers: a close was left half done, so run check_index before writing. Writes nothing. Fails if the " +
+			"pattern has no {NNN} or {YYYY-MM-DD} token or the index cannot be read. " +
+			"Fallback without this server: the next_session shell function in the stele-mcp README.",
+	}, nextSession)
 	return server
 }

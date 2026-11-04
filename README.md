@@ -628,6 +628,65 @@ check_cadence() {
 
 The fallback does not handle a sentinel threshold or a missing index, and does not check the formats.
 
+### `next_session`
+
+Composes the session record a stele close is about to write: the next number, the file name and the
+exact paths the close writes and appends to. The close appends rows with `printf >>`, and an append to
+a mistyped path does not fail: it creates the file it was meant to find, and the right one is left
+without its row. It writes nothing.
+
+| Input | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `root` | string | the server working directory | Project root holding the instance. |
+| `config` | string | `stele.config.md` under `root` | Manifest path. |
+| `today` | string | the machine's local date | Date `YYYY-MM-DD` for the file name. |
+
+The number is one more than the highest of the session index (its first column) and of the record
+files in the history folder. The file name comes from the manifest's `session` pattern, or the kit
+default `sesion-{NNN}-{YYYY-MM-DD}.md`: the number is padded to as many digits as the token has `N`s.
+Without `today`, the date comes from the machine clock with the [`today`](#today) probe, and
+`date_verdict` and `date_advice` say whether to trust it; with it, `date_verdict` is `given`.
+
+It returns `number`, `padded`, `date`, `date_verdict`, `date_advice`, `file`, `path`, `history_dir`,
+`pattern`, `index`, `effort` (the effort log, when the role is on and the file exists), `index_last`,
+`files_last`, `last_files` (the record files with the highest number), `advice` and `ok`: true when
+the index and the folder end at the same number. When they do not, a close was left half done (a row
+without its record, or a record without its row): run [`check_index`](#check_index) before writing.
+
+It fails when the manifest does not exist, the session pattern has no `{NNN}` or `{YYYY-MM-DD}`
+token, the index cannot be read or has a row whose first cell is not a number, or `today` is not
+`YYYY-MM-DD`.
+
+**Fallback.** The same composition in `bash`, `awk` and `sed`:
+
+```bash
+# usage: next_session [ROOT] [YYYY-MM-DD]
+next_session() {
+  local root=${1:-.} today=${2:-$(date +%F)} base dir pat idx tok a b n file
+  [ -f "$root/stele.config.md" ] || { echo "manifest does not exist: $root/stele.config.md"; return 1; }
+  val() {  # val SECTION_POSITION KEY: column 2 of the row, without spaces or backticks
+    awk -F'|' -v n="$1" -v k="$2" '/^(```|~~~)/ { f = !f } f { next } /^## / { s++; next }
+      s == n && /^ *\|/ { c = $2; gsub(/[ `]/, "", c); if (c == k) { v = $3; gsub(/^[ `]+|[ `]+$/, "", v); print v; exit } }' \
+      "$root/stele.config.md"
+  }
+  base=$(val 2 base); base=${base:-.}; base=${base%/}
+  dir=$(val 3 history_dir); dir=$base/${dir:-history/}
+  pat=$(val 3 session); pat=${pat:-'sesion-{NNN}-{YYYY-MM-DD}.md'}
+  idx=$(val 3 index); idx=$dir${idx:-index.md}
+  tok=$(grep -o '{N*}' <<<"$pat") || { echo "no {NNN} token in $pat"; return 1; }
+  a=$(awk -F'|' '/^ *\|/ { c = $2; gsub(/ /, "", c); if (c ~ /^[0-9]+$/ && c + 0 > m) m = c + 0 } END { print m + 0 }' "$root/$idx")
+  b=$(ls "$root/$dir" | sed -n "s/^${pat%%"$tok"*}\([0-9][0-9]*\)-[0-9]\{4\}-[0-9][0-9]-[0-9][0-9]${pat##*\}}\$/\1/p" | sort -n | tail -n 1)
+  b=$((10#${b:-0}))
+  n=$(( (a > b ? a : b) + 1 ))
+  file=${pat/"$tok"/$(printf '%0*d' $(( ${#tok} - 2 )) "$n")}; file=${file/'{YYYY-MM-DD}'/$today}
+  echo "next $dir$file  (index ends at $a, folder at $b)"
+  [ "$a" -eq "$b" ] || { echo "index and folder disagree: check_index before writing"; return 1; }
+}
+```
+
+The fallback takes the date from `date +%F` without the time zone probe, and does not name the effort
+log.
+
 ## Install
 
 Requires Go 1.26 or later.

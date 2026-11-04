@@ -162,6 +162,34 @@ var defaults = map[string]string{
 	"index": "index.md", "audit": "audit.md", "effort": "esfuerzo.md",
 	"correspondence": "cartas.md", "history_dir": "history/",
 	"correspondence_dir": "correspondencia/",
+	"session":            "sesion-{NNN}-{YYYY-MM-DD}.md",
+	"letter":             "carta-{NNN}-{YYYY-MM-DD}.md",
+}
+
+// containers are the roles that name a folder under base, not a document.
+var containers = map[string]bool{"history_dir": true, "correspondence_dir": true}
+
+// ContainerPath returns the path of a container role (history_dir,
+// correspondence_dir) relative to the project root, with forward slashes.
+func (m *Manifest) ContainerPath(role string) (string, error) {
+	if !containers[role] {
+		return "", fmt.Errorf("unknown container %q", role)
+	}
+	name, err := m.name(role)
+	if err != nil {
+		return "", err
+	}
+	return path.Clean(path.Join(m.Base(), name)), nil
+}
+
+// Name returns the name the manifest gives a role, or the kit default when
+// it has no row. For session and letter it is a pattern with {NNN} and
+// {YYYY-MM-DD}. A role set to the sentinel returns ErrDisabled.
+func (m *Manifest) Name(role string) (string, error) {
+	if _, ok := defaults[role]; !ok {
+		return "", fmt.Errorf("unknown role %q", role)
+	}
+	return m.name(role)
 }
 
 // IsRole reports whether role is a document role this package can locate.
